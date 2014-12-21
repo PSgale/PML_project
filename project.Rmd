@@ -1,0 +1,151 @@
+---
+output: html_document
+---
+PML Project.
+---
+
+It was requested to analize data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and create the model whch would be able predict the manner in which they did the exercise *classe* variable:
+
+Data was available on internet. I get it and save on my project folder in file with the same name *pml-training.csv*. First my step was to read the data:
+```{r message=FALSE} 
+dataset <- read.csv("pml-training.csv") 
+```
+
+
+Preprocessing steps.
+--
+
+Data file contains 19622 observations.
+On the next preprocessing step 1 several columns will be removed: 
+- which contain 19216 *NA* values;
+- which most freequent value is empty space.
+```{r message=FALSE} 
+summ <- summary(dataset);
+get_freequent_value <- function(x)
+{
+ return (names(table(x))[1])
+}
+empty <- which(apply(dataset, 2, get_freequent_value) == "")
+NA_s1 <- which(summ[7,] == "NA's   :19216  ")
+remove <- c(empty, NA_s1)
+dataset <- dataset[, -remove]
+```
+After preprocessing 60 variables left.
+
+
+Now we should review what is left. Get index of outcome variable, order variable and character variables which should be removed from prediction dataset in future.  
+```{r message=FALSE}
+# summary(dataset);
+# names(dataset); head(dataset)
+outcome <- which(names(dataset) == c("X", "classe"))
+charact <- c(1, 2, 5, 6)
+```
+
+
+It's time for preprocessing step 2 on which we would be able find related columns. We will use correlation koefficient and search for columns which are linearly related.  
+```{r message=FALSE}
+relation_check <- dataset[,-c(charact, outcome)]
+M <- abs(cor(relation_check))
+diag(M) <- 0
+related_ <- which(M > 0.8, arr.ind=T)
+related_ <- related_[which(related_[,1] < related_[,2]),]
+related_ <- related_[order(related_[,1]),]
+related <- unique(related_[,2])
+related <- related[order(related)]
+
+lower_numbers <- function(x, charact)
+{
+  num = 0
+  charact[order(charact)]
+  for(y in charact){
+    if (x >= y)
+    {
+      x = x + 1
+      num = num + 1
+    }
+  }
+  return (num)
+}
+related <- related + sapply(related, lower_numbers, charact)
+```
+
+
+Data analisys
+--
+
+Here ispart to analize relations beetween variables.
+# To DO: more information to investigate the difference and wrong / right behaviour.
+```{r message=FALSE}
+training <- dataset[,-(related)]
+# pairs(training[,c(1:9,47)])
+```
+
+Here is time to split data to Train and Test sets.
+```{r message=FALSE}
+library(caret);
+inTrain <- createDataPartition(y=dataset$classe, p=0.7, list=FALSE)
+training <- dataset[inTrain,]; testing <- dataset[-inTrain,]
+```
+
+
+Searching for best model
+--
+
+Here I'm start from the easiest *Recursive Partitioning and Regression Trees* model.
+```{r message=FALSE}
+library(rpart);
+modelFit_RPART <- train(classe ~ ., method="rpart", data=training)
+pred <- predict(modelFit_RPART, newdata=testing);
+table(pred, testing$classe); #confusionMatrix(testing$classe, pred);
+```
+But results are not very excieted. **Accuracy** only 0.66. *C* and *D* *classe* factors was wrong predicted.
+
+
+Next model to review I thought could be *Random Forest*. It could be used to filter unimportant variables to get more compact model... But it has very bad it's parameters estimation performance. So I was not able find it's result in 2 hours and decide to not wait till it ends and leave next block of code without results ... 
+```{r message=FALSE}
+# library(randomForest);
+# modelFit <- train(training$classe ~ ., data=training, importance = TRUE, method="rf", prox=TRUE) 
+# print(modelFit$finalModel)
+# pred <- predict(modelFit, newdata=testing)
+# table(pred, testing$y)
+# varImp <- varImp(modFit) 
+# importance <- apply(varImp$importance, 1, sum)
+# importance <- importance / sum(importance) * 100
+# importance # Result of variables ordered by their importance. List could be used to tilter variables.
+```
+
+
+I found that factors B and D has many mis predictions and decided to extract them with "Generalized Linear Model" model. As current model has restrictions in number of factors I prepared additional factor variable with "C" and "D" as other values.
+```{r message=FALSE}
+library(caret);
+trn_classeC <- as.factor(ifelse((training$classe == "C"), "C", "A"))
+tst_classeC <- as.factor(ifelse((testing$classe == "C"), "C", "A"))
+
+preProc <- preProcess(training[,-c(outcome ,charact, related)], method="pca", pcaComp=2)
+trainPC <- predict(preProc, training[,-c(outcome ,charact, related)])
+modelFit_GLM <- train(trn_classeC ~ ., method="glm", data=trainPC)
+# modelFit_GLM
+testPC <- predict(preProc, testing[,-c(outcome ,charact, related)])
+pred <- predict(modelFit_GLM, testPC)
+table(pred, tst_classeC)
+# confusionMatrix(tst_classeC, pred)
+```
+pcaComp was set to 2 because I did calculation with whole factors myself and find that it's possible to estimate 99% of variance with first 2 components. *Accuracy* of the model equal 0.8257, but it was unable to distinguish *C* classe factors. 
+
+
+Use model in practice.
+--
+As I have best result for model *Recursive Partitioning and Regression Trees* I'll use it in prediction. 
+```{r message=FALSE}
+dataset_test <- read.csv("pml-testing.csv") 
+dataset_test <- dataset_test[, -remove]
+
+pred <- predict(modelFit_RPART, newdata=dataset_test);
+pred
+```
+
+
+Results.
+--
+
+My results was not good. I think I understanding my problem. I was not able to find criteria which could distinct and filter correctly and incorrectly done actions. Therefore it cause me a noise which disturb me to predict outcome correctly.
