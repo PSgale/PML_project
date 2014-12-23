@@ -70,77 +70,52 @@ related <- related + sapply(related, lower_numbers, charact)
 ```
 
 
-Data analisys
+Data analysis
 --
 
 Here ispart to analize relations beetween variables.
 # To DO: more information to investigate the difference and wrong / right behaviour.
 ```{r message=FALSE}
-training <- dataset[,-(related)]
+dataset <- dataset[,-c(charact, related)]
 # pairs(training[,c(1:9,47)])
 ```
 
 Here is time to split data to Train and Test sets.
 ```{r message=FALSE}
-library(caret);
+suppressWarnings(library(caret));
 inTrain <- createDataPartition(y=dataset$classe, p=0.7, list=FALSE)
 training <- dataset[inTrain,]; testing <- dataset[-inTrain,]
 ```
 
 
-Searching for best model
+Model training
 --
 
-Here I'm start from the easiest *Recursive Partitioning and Regression Trees* model.
+Here we will train *Random Forest* model, the best from the tested. 
 ```{r message=FALSE}
-library(rpart);
-modelFit_RPART <- train(classe ~ ., method="rpart", data=training)
-pred <- predict(modelFit_RPART, newdata=testing);
-table(pred, testing$classe); #confusionMatrix(testing$classe, pred);
+suppressWarnings(library(randomForest));
+suppressWarnings(library(foreach));
+rf <- foreach(n=rep(200, 5), .combine=randomForest::combine, .packages='randomForest') %do% {
+  randomForest(training[, -length(training)], training$classe, ntree=n)
+}
+modelFit <- predict(rf, newdata=training)
+pred <- predict(rf, newdata=testing) 
+table(pred, testing$classe)  #confusionMatrix(pred, testing$classe)
 ```
-But results are not very excieted. **Accuracy** only 0.66. *C* and *D* *classe* factors was wrong predicted.
+Model accuracy 0.999.
 
-
-Next model to review I thought could be *Random Forest*. It could be used to filter unimportant variables to get more compact model... But it has very bad it's parameters estimation performance. So I was not able find it's result in 2 hours and decide to not wait till it ends and leave next block of code without results ... 
-```{r message=FALSE}
-# library(randomForest);
-# modelFit <- train(training$classe ~ ., data=training, importance = TRUE, method="rf", prox=TRUE) 
-# print(modelFit$finalModel)
-# pred <- predict(modelFit, newdata=testing)
-# table(pred, testing$y)
-# varImp <- varImp(modFit) 
-# importance <- apply(varImp$importance, 1, sum)
-# importance <- importance / sum(importance) * 100
-# importance # Result of variables ordered by their importance. List could be used to tilter variables.
-```
-
-
-I found that factors B and D has many mis predictions and decided to extract them with "Generalized Linear Model" model. As current model has restrictions in number of factors I prepared additional factor variable with "C" and "D" as other values.
-```{r message=FALSE}
-library(caret);
-trn_classeC <- as.factor(ifelse((training$classe == "C"), "C", "A"))
-tst_classeC <- as.factor(ifelse((testing$classe == "C"), "C", "A"))
-
-preProc <- preProcess(training[,-c(outcome ,charact, related)], method="pca", pcaComp=2)
-trainPC <- predict(preProc, training[,-c(outcome ,charact, related)])
-modelFit_GLM <- train(trn_classeC ~ ., method="glm", data=trainPC)
-# modelFit_GLM
-testPC <- predict(preProc, testing[,-c(outcome ,charact, related)])
-pred <- predict(modelFit_GLM, testPC)
-table(pred, tst_classeC)
-# confusionMatrix(tst_classeC, pred)
-```
-pcaComp was set to 2 because I did calculation with whole factors myself and find that it's possible to estimate 99% of variance with first 2 components. *Accuracy* of the model equal 0.8257, but it was unable to distinguish *C* classe factors. 
+ 
 
 
 Use model in practice.
 --
-As I have best result for model *Recursive Partitioning and Regression Trees* I'll use it in prediction. 
+As I have best result for model *Random Forest*. I'll use it in test case prediction. 
 ```{r message=FALSE}
 dataset_test <- read.csv("pml-testing.csv") 
 dataset_test <- dataset_test[, -remove]
+dataset_test <- dataset_test[, -c(charact, related)]  # related
 
-pred <- predict(modelFit_RPART, newdata=dataset_test);
+pred <- predict(rf, newdata=dataset_test[,-length(dataset_test)]);
 pred
 ```
 
@@ -148,4 +123,4 @@ pred
 Results.
 --
 
-My results was not good. I think I understanding my problem. I was not able to find criteria which could distinct and filter correctly and incorrectly done actions. Therefore it cause me a noise which disturb me to predict outcome correctly.
+*Random Forest* model was used to evaluate relation.
